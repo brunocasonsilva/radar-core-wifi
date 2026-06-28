@@ -26,16 +26,18 @@ function App() {
   const serviceRef = useRef(null);
 
   const onMapLoad = (mapInstance) => {
+    console.log('Mapa carregado!');
     setMap(mapInstance);
     serviceRef.current = new window.google.maps.places.PlacesService(mapInstance);
   };
 
-  const handleSearchInputChange = (e) => {
-    setSearchInput(e.target.value);
-  };
-
   const handleSearchPlace = async () => {
-    if (!serviceRef.current || !searchInput) return;
+    console.log('Iniciando busca por:', searchInput);
+    
+    if (!serviceRef.current || !searchInput) {
+      console.log('Erro: serviceRef ou searchInput vazio');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -44,9 +46,16 @@ function App() {
         fields: ['place_id', 'geometry', 'name', 'types', 'formatted_address', 'website', 'formatted_phone_number', 'opening_hours', 'rating', 'reviews']
       };
 
+      console.log('Enviando request:', request);
+
       serviceRef.current.findPlaceFromQuery(request, (results, status) => {
+        console.log('Status da busca:', status);
+        console.log('Resultados:', results);
+
         if (status === window.google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
           const place = results[0];
+          console.log('Lugar encontrado:', place.name);
+          
           setSelectedPlace({
             id: place.place_id,
             name: place.name,
@@ -67,23 +76,32 @@ function App() {
 
           setCompetitors([]);
         } else {
-          alert('Estabelecimento não encontrado');
+          alert('Estabelecimento não encontrado. Tente outro nome ou endereço.');
         }
         setLoading(false);
       });
     } catch (error) {
       console.error('Erro na busca:', error);
+      alert('Erro ao buscar: ' + error.message);
       setLoading(false);
     }
   };
 
   const handleSearchCompetitors = async () => {
-    if (!selectedPlace || !serviceRef.current || !map) return;
+    console.log('Iniciando busca de concorrentes');
+    
+    if (!selectedPlace || !serviceRef.current || !map) {
+      console.log('Erro: faltam dados para buscar concorrentes');
+      return;
+    }
 
     setLoading(true);
     try {
       const radiusInMeters = radius * 1000;
       const placeType = selectedPlace.types[0] || 'establishment';
+
+      console.log('Tipo de lugar:', placeType);
+      console.log('Raio:', radiusInMeters, 'metros');
 
       const request = {
         location: selectedPlace.location,
@@ -93,6 +111,9 @@ function App() {
       };
 
       serviceRef.current.nearbySearch(request, (results, status) => {
+        console.log('Status busca concorrentes:', status);
+        console.log('Total encontrado:', results?.length);
+
         if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
           const filtered = results.filter(r => r.place_id !== selectedPlace.id);
 
@@ -109,6 +130,7 @@ function App() {
             distance: calculateDistance(selectedPlace.location, place.geometry.location)
           }));
 
+          console.log('Concorrentes encontrados:', competitorsList.length);
           setCompetitors(competitorsList.sort((a, b) => a.distance - b.distance));
         }
         setLoading(false);
@@ -158,7 +180,7 @@ function App() {
               <input
                 type="text"
                 value={searchInput}
-                onChange={handleSearchInputChange}
+                onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Digite o nome do estabelecimento ou endereço"
                 className="search-input"
               />
@@ -186,46 +208,44 @@ function App() {
             )}
           </section>
 
-          {map && (
-            <section className="map-section">
-              <GoogleMap
-                mapContainerStyle={mapContainerStyle}
-                center={selectedPlace?.location || defaultCenter}
-                zoom={selectedPlace ? 15 : 12}
-                onLoad={onMapLoad}
-              >
-                {selectedPlace && (
-                  <>
-                    <Marker
-                      position={selectedPlace.location}
-                      title={selectedPlace.name}
-                      icon="http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-                    />
-                    <Circle
-                      center={selectedPlace.location}
-                      radius={radius * 1000}
-                      options={{
-                        fillColor: '#4285F4',
-                        fillOpacity: 0.1,
-                        strokeColor: '#4285F4',
-                        strokeOpacity: 0.8,
-                        strokeWeight: 2
-                      }}
-                    />
-                  </>
-                )}
-
-                {competitors.map((competitor, index) => (
+          <section className="map-section">
+            <GoogleMap
+              mapContainerStyle={mapContainerStyle}
+              center={selectedPlace?.location || defaultCenter}
+              zoom={selectedPlace ? 15 : 12}
+              onLoad={onMapLoad}
+            >
+              {selectedPlace && (
+                <>
                   <Marker
-                    key={index}
-                    position={competitor.location}
-                    title={competitor.name}
-                    icon="http://maps.google.com/mapfiles/ms/icons/red-dot.png"
+                    position={selectedPlace.location}
+                    title={selectedPlace.name}
+                    icon="http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
                   />
-                ))}
-              </GoogleMap>
-            </section>
-          )}
+                  <Circle
+                    center={selectedPlace.location}
+                    radius={radius * 1000}
+                    options={{
+                      fillColor: '#4285F4',
+                      fillOpacity: 0.1,
+                      strokeColor: '#4285F4',
+                      strokeOpacity: 0.8,
+                      strokeWeight: 2
+                    }}
+                  />
+                </>
+              )}
+
+              {competitors.map((competitor, index) => (
+                <Marker
+                  key={index}
+                  position={competitor.location}
+                  title={competitor.name}
+                  icon="http://maps.google.com/mapfiles/ms/icons/red-dot.png"
+                />
+              ))}
+            </GoogleMap>
+          </section>
 
           {competitors.length > 0 && (
             <section className="results-section">
@@ -271,3 +291,27 @@ function App() {
 }
 
 export default App;
+EOF
+cat /mnt/user-data/outputs/App_FINAL.js | head -20
+Saída
+
+import React, { useRef, useState } from 'react';
+import { GoogleMap, LoadScript, Marker, Circle } from '@react-google-maps/api';
+import './App.css';
+
+const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+const libraries = ['places'];
+
+const mapContainerStyle = {
+  width: '100%',
+  height: '500px',
+  borderRadius: '8px'
+};
+
+const defaultCenter = {
+  lat: -23.5505,
+  lng: -46.6333
+};
+
+function App() {
+  const [map, setMap] = useState(null);
