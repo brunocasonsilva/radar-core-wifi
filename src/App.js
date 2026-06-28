@@ -34,7 +34,6 @@ function App() {
   const onMapLoad = (mapInstance) => {
     setMap(mapInstance);
     serviceRef.current = new window.google.maps.places.PlacesService(mapInstance);
-    placesServiceRef.current = new window.google.maps.places.AutocompleteService();
   };
 
   const handleSearchInputChange = async (e) => {
