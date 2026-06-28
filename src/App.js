@@ -144,7 +144,7 @@ function App() {
   };
 
   return (
-    <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={['places']}>
+    <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={libraries}>
       <div className="App">
         <header className="app-header">
           <h1>🎯 Radar Core Wi-Fi</h1>
