@@ -3,6 +3,7 @@ import { GoogleMap, LoadScript, Marker, Circle } from '@react-google-maps/api';
 import './App.css';
 
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+const libraries = ['places'];
 
 const mapContainerStyle = {
   width: '100%',
