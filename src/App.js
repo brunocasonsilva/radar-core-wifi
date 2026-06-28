@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { GoogleMap, Marker, Circle } from '@react-google-maps/api';
+import { GoogleMap, LoadScript, Marker, Circle } from '@react-google-maps/api';
 import './App.css';
 
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
@@ -24,19 +24,12 @@ function App() {
   const [loading, setLoading] = useState(false);
   const serviceRef = useRef(null);
 
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
-    script.async = true;
-    document.head.appendChild(script);
-  }, []);
-
   const onMapLoad = (mapInstance) => {
     setMap(mapInstance);
     serviceRef.current = new window.google.maps.places.PlacesService(mapInstance);
   };
 
-  const handleSearchInputChange = async (e) => {
+  const handleSearchInputChange = (e) => {
     setSearchInput(e.target.value);
   };
 
@@ -72,6 +65,8 @@ function App() {
           }
 
           setCompetitors([]);
+        } else {
+          alert('Estabelecimento não encontrado');
         }
         setLoading(false);
       });
@@ -98,10 +93,8 @@ function App() {
 
       serviceRef.current.nearbySearch(request, (results, status) => {
         if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-          // Filtra o próprio estabelecimento
           const filtered = results.filter(r => r.place_id !== selectedPlace.id);
 
-          // Enriquece dados de cada concorrente
           const competitorsList = filtered.map(place => ({
             id: place.place_id,
             name: place.name,
@@ -126,7 +119,7 @@ function App() {
   };
 
   const calculateDistance = (loc1, loc2) => {
-    const R = 6371; // Raio da Terra em km
+    const R = 6371;
     const dLat = (loc2.lat() - loc1.lat()) * Math.PI / 180;
     const dLng = (loc2.lng() - loc1.lng()) * Math.PI / 180;
     const a = 
@@ -151,126 +144,128 @@ function App() {
   };
 
   return (
-    <div className="App">
-      <header className="app-header">
-        <h1>🎯 Radar Core Wi-Fi</h1>
-        <p>Análise de Concorrentes por Raio de Cobertura</p>
-      </header>
+    <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={['places']}>
+      <div className="App">
+        <header className="app-header">
+          <h1>🎯 Radar Core Wi-Fi</h1>
+          <p>Análise de Concorrentes por Raio de Cobertura</p>
+        </header>
 
-      <main className="app-main">
-        <section className="search-section">
-          <div className="search-container">
-            <input
-              type="text"
-              value={searchInput}
-              onChange={handleSearchInputChange}
-              placeholder="Digite o nome do estabelecimento ou endereço"
-              className="search-input"
-            />
-            <button onClick={handleSearchPlace} disabled={loading} className="btn btn-primary">
-              {loading ? 'Buscando...' : 'Buscar'}
-            </button>
-          </div>
-
-          {selectedPlace && (
-            <div className="selected-place-info">
-              <h3>{selectedPlace.name}</h3>
-              <p>{selectedPlace.address}</p>
-              <div className="radius-selector">
-                <label>Raio de Busca:</label>
-                <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
-                  <option value={1}>1 km</option>
-                  <option value={5}>5 km</option>
-                  <option value={10}>10 km</option>
-                </select>
-                <button onClick={handleSearchCompetitors} disabled={loading} className="btn btn-secondary">
-                  {loading ? 'Buscando...' : 'Buscar Concorrentes'}
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {map && (
-          <section className="map-section">
-            <GoogleMap
-              mapContainerStyle={mapContainerStyle}
-              center={selectedPlace?.location || defaultCenter}
-              zoom={selectedPlace ? 15 : 12}
-              onLoad={onMapLoad}
-            >
-              {selectedPlace && (
-                <>
-                  <Marker
-                    position={selectedPlace.location}
-                    title={selectedPlace.name}
-                    icon="http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-                  />
-                  <Circle
-                    center={selectedPlace.location}
-                    radius={radius * 1000}
-                    options={{
-                      fillColor: '#4285F4',
-                      fillOpacity: 0.1,
-                      strokeColor: '#4285F4',
-                      strokeOpacity: 0.8,
-                      strokeWeight: 2
-                    }}
-                  />
-                </>
-              )}
-
-              {competitors.map((competitor, index) => (
-                <Marker
-                  key={index}
-                  position={competitor.location}
-                  title={competitor.name}
-                  icon="http://maps.google.com/mapfiles/ms/icons/red-dot.png"
-                />
-              ))}
-            </GoogleMap>
-          </section>
-        )}
-
-        {competitors.length > 0 && (
-          <section className="results-section">
-            <div className="results-header">
-              <h2>Concorrentes Encontrados ({competitors.length})</h2>
-              <button onClick={generatePDF} className="btn btn-export">
-                📄 Exportar PDF
+        <main className="app-main">
+          <section className="search-section">
+            <div className="search-container">
+              <input
+                type="text"
+                value={searchInput}
+                onChange={handleSearchInputChange}
+                placeholder="Digite o nome do estabelecimento ou endereço"
+                className="search-input"
+              />
+              <button onClick={handleSearchPlace} disabled={loading} className="btn btn-primary">
+                {loading ? 'Buscando...' : 'Buscar'}
               </button>
             </div>
 
-            <div id="report-content" className="results-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Nome</th>
-                    <th>Distância</th>
-                    <th>Telefone</th>
-                    <th>Site</th>
-                    <th>Avaliação</th>
-                    <th>Horário</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {competitors.map((competitor, index) => (
-                    <tr key={index}>
-                      <td>{competitor.name}</td>
-                      <td>{competitor.distance.toFixed(2)} km</td>
-                      <td>{competitor.phone}</td>
-                      <td>{competitor.website !== 'N/A' ? <a href={competitor.website} target="_blank" rel="noopener noreferrer">Visitar</a> : 'N/A'}</td>
-                      <td>⭐ {competitor.rating !== 'N/A' ? competitor.rating : 'N/A'}</td>
-                      <td>{competitor.hours.length > 0 ? competitor.hours[0] : 'N/A'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {selectedPlace && (
+              <div className="selected-place-info">
+                <h3>{selectedPlace.name}</h3>
+                <p>{selectedPlace.address}</p>
+                <div className="radius-selector">
+                  <label>Raio de Busca:</label>
+                  <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
+                    <option value={1}>1 km</option>
+                    <option value={5}>5 km</option>
+                    <option value={10}>10 km</option>
+                  </select>
+                  <button onClick={handleSearchCompetitors} disabled={loading} className="btn btn-secondary">
+                    {loading ? 'Buscando...' : 'Buscar Concorrentes'}
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
-        )}
-      </main>
-    </div>
+
+          {map && (
+            <section className="map-section">
+              <GoogleMap
+                mapContainerStyle={mapContainerStyle}
+                center={selectedPlace?.location || defaultCenter}
+                zoom={selectedPlace ? 15 : 12}
+                onLoad={onMapLoad}
+              >
+                {selectedPlace && (
+                  <>
+                    <Marker
+                      position={selectedPlace.location}
+                      title={selectedPlace.name}
+                      icon="http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+                    />
+                    <Circle
+                      center={selectedPlace.location}
+                      radius={radius * 1000}
+                      options={{
+                        fillColor: '#4285F4',
+                        fillOpacity: 0.1,
+                        strokeColor: '#4285F4',
+                        strokeOpacity: 0.8,
+                        strokeWeight: 2
+                      }}
+                    />
+                  </>
+                )}
+
+                {competitors.map((competitor, index) => (
+                  <Marker
+                    key={index}
+                    position={competitor.location}
+                    title={competitor.name}
+                    icon="http://maps.google.com/mapfiles/ms/icons/red-dot.png"
+                  />
+                ))}
+              </GoogleMap>
+            </section>
+          )}
+
+          {competitors.length > 0 && (
+            <section className="results-section">
+              <div className="results-header">
+                <h2>Concorrentes Encontrados ({competitors.length})</h2>
+                <button onClick={generatePDF} className="btn btn-export">
+                  📄 Exportar PDF
+                </button>
+              </div>
+
+              <div id="report-content" className="results-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th>Distância</th>
+                      <th>Telefone</th>
+                      <th>Site</th>
+                      <th>Avaliação</th>
+                      <th>Horário</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {competitors.map((competitor, index) => (
+                      <tr key={index}>
+                        <td>{competitor.name}</td>
+                        <td>{competitor.distance.toFixed(2)} km</td>
+                        <td>{competitor.phone}</td>
+                        <td>{competitor.website !== 'N/A' ? <a href={competitor.website} target="_blank" rel="noopener noreferrer">Visitar</a> : 'N/A'}</td>
+                        <td>⭐ {competitor.rating !== 'N/A' ? competitor.rating : 'N/A'}</td>
+                        <td>{competitor.hours.length > 0 ? competitor.hours[0] : 'N/A'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </main>
+      </div>
+    </LoadScript>
   );
 }
 
