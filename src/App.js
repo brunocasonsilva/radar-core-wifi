@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { GoogleMap, LoadScript, Marker, Circle } from '@react-google-maps/api';
 import './App.css';
 
