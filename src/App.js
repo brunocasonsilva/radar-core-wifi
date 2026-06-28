@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { GoogleMap, LoadScript, Marker, Circle } from '@react-google-maps/api';
+import { GoogleMap, Marker, Circle } from '@react-google-maps/api';
 import './App.css';
 
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
@@ -22,9 +22,7 @@ function App() {
   const [radius, setRadius] = useState(5);
   const [competitors, setCompetitors] = useState([]);
   const [loading, setLoading] = useState(false);
-  const autocompleteRef = useRef(null);
   const serviceRef = useRef(null);
-  const placesServiceRef = useRef(null);
 
   useEffect(() => {
     const script = document.createElement('script');
