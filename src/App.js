@@ -43,7 +43,7 @@ function App() {
     try {
       const request = {
         query: searchInput,
-        fields: ['place_id', 'geometry', 'name', 'types', 'formatted_address', 'website', 'formatted_phone_number', 'opening_hours', 'rating', 'reviews']
+        fields: ['place_id', 'geometry', 'name', 'types', 'formatted_address', 'formatted_phone_number', 'opening_hours', 'rating']
       };
 
       console.log('Enviando request:', request);
@@ -62,11 +62,10 @@ function App() {
             location: place.geometry.location,
             address: place.formatted_address,
             phone: place.formatted_phone_number || 'N/A',
-            website: place.website || 'N/A',
+            website: 'N/A',
             types: place.types || [],
             hours: place.opening_hours?.weekday_text || [],
-            rating: place.rating || 'N/A',
-            reviews: place.reviews || []
+            rating: place.rating || 'N/A'
           });
 
           if (map) {
@@ -107,7 +106,7 @@ function App() {
         location: selectedPlace.location,
         radius: radiusInMeters,
         type: placeType,
-        fields: ['place_id', 'name', 'geometry', 'formatted_address', 'formatted_phone_number', 'website', 'opening_hours', 'rating', 'reviews']
+        fields: ['place_id', 'name', 'geometry', 'formatted_address', 'formatted_phone_number', 'opening_hours', 'rating']
       };
 
       serviceRef.current.nearbySearch(request, (results, status) => {
@@ -123,10 +122,9 @@ function App() {
             location: place.geometry.location,
             address: place.formatted_address || 'N/A',
             phone: place.formatted_phone_number || 'N/A',
-            website: place.website || 'N/A',
+            website: 'N/A',
             hours: place.opening_hours?.weekday_text || [],
             rating: place.rating || 'N/A',
-            reviews: place.reviews || [],
             distance: calculateDistance(selectedPlace.location, place.geometry.location)
           }));
 
@@ -274,7 +272,7 @@ function App() {
                         <td>{competitor.name}</td>
                         <td>{competitor.distance.toFixed(2)} km</td>
                         <td>{competitor.phone}</td>
-                        <td>{competitor.website !== 'N/A' ? <a href={competitor.website} target="_blank" rel="noopener noreferrer">Visitar</a> : 'N/A'}</td>
+                        <td>{competitor.website}</td>
                         <td>⭐ {competitor.rating !== 'N/A' ? competitor.rating : 'N/A'}</td>
                         <td>{competitor.hours.length > 0 ? competitor.hours[0] : 'N/A'}</td>
                       </tr>
@@ -289,5 +287,3 @@ function App() {
     </LoadScript>
   );
 }
-
-export default App;
