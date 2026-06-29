@@ -3,7 +3,6 @@ import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import './App.css';
 
-// Fix para ícones do Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -44,7 +43,6 @@ function App() {
     try {
       console.log('Buscando:', searchInput);
       
-      // Usar Nominatim (OpenStreetMap) para buscar lugar
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchInput)}&format=json&limit=1`
       );
@@ -62,7 +60,7 @@ function App() {
           address: place.display_name,
           lat: lat,
           lon: lon,
-          type: 'restaurant' // padrão
+          type: 'restaurant'
         });
 
         setMapCenter([lat, lon]);
@@ -84,12 +82,12 @@ function App() {
     try {
       console.log('Buscando estabelecimentos próximos...');
       
-      // Usar Overpass API para buscar estabelecimentos próximos
-      const query = `
-        [bbox:${selectedPlace.lat - radius/111},${selectedPlace.lon - radius/111},${selectedPlace.lat + radius/111},${selectedPlace.lon + radius/111}];
-        (node["amenity"="restaurant"];node["amenity"="cafe"];node["amenity"="bar"];node["amenity"="fast_food"];);
-        out center;
-      `;
+      const south = selectedPlace.lat - (radius / 111);
+      const north = selectedPlace.lat + (radius / 111);
+      const west = selectedPlace.lon - (radius / 111);
+      const east = selectedPlace.lon + (radius / 111);
+
+      const query = `[bbox:${south},${west},${north},${east}];(node["amenity"~"restaurant|cafe|bar|fast_food|pub"];);out center;`;
 
       const response = await fetch('https://overpass-api.de/api/interpreter', {
         method: 'POST',
@@ -99,9 +97,9 @@ function App() {
       const data = await response.json();
       console.log('Encontrados:', data.elements?.length || 0);
 
-      if (data.elements) {
+      if (data.elements && data.elements.length > 0) {
         const places = data.elements
-          .filter(el => el.lat && el.lon && !(el.id === selectedPlace.id))
+          .filter(el => el.lat && el.lon)
           .map(el => ({
             id: el.id,
             name: el.tags?.name || 'Sem nome',
@@ -109,16 +107,20 @@ function App() {
             lon: el.lon,
             phone: el.tags?.['contact:phone'] || 'N/A',
             hours: el.tags?.['opening_hours'] || 'N/A',
-            type: el.tags?.amenity || 'N/A',
+            type: el.tags?.amenity || 'Estabelecimento',
             distance: calculateDistance(selectedPlace.lat, selectedPlace.lon, el.lat, el.lon)
           }))
-          .sort((a, b) => a.distance - b.distance);
+          .filter(p => p.distance > 0.1) // Remove o próprio lugar
+          .sort((a, b) => a.distance - b.distance)
+          .slice(0, 50);
 
         setCompetitors(places);
+      } else {
+        alert('Nenhum estabelecimento encontrado neste raio');
       }
     } catch (error) {
       console.error('Erro:', error);
-      alert('Erro ao buscar concorrentes');
+      alert('Erro ao buscar concorrentes. Tente novamente.');
     }
     setLoading(false);
   };
@@ -213,6 +215,7 @@ function App() {
                 <Popup>
                   <strong>{comp.name}</strong><br />
                   {comp.distance.toFixed(2)} km<br />
+                  {comp.type}<br />
                   {comp.phone}
                 </Popup>
               </Marker>
@@ -235,8 +238,8 @@ function App() {
                   <tr>
                     <th>Nome</th>
                     <th>Distância</th>
-                    <th>Telefone</th>
                     <th>Tipo</th>
+                    <th>Telefone</th>
                     <th>Horário</th>
                   </tr>
                 </thead>
@@ -245,8 +248,8 @@ function App() {
                     <tr key={comp.id}>
                       <td>{comp.name}</td>
                       <td>{comp.distance.toFixed(2)} km</td>
-                      <td>{comp.phone}</td>
                       <td>{comp.type}</td>
+                      <td>{comp.phone}</td>
                       <td>{comp.hours}</td>
                     </tr>
                   ))}
