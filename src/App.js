@@ -291,27 +291,3 @@ function App() {
 }
 
 export default App;
-EOF
-cat /mnt/user-data/outputs/App_FINAL.js | head -20
-Saída
-
-import React, { useRef, useState } from 'react';
-import { GoogleMap, LoadScript, Marker, Circle } from '@react-google-maps/api';
-import './App.css';
-
-const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
-const libraries = ['places'];
-
-const mapContainerStyle = {
-  width: '100%',
-  height: '500px',
-  borderRadius: '8px'
-};
-
-const defaultCenter = {
-  lat: -23.5505,
-  lng: -46.6333
-};
-
-function App() {
-  const [map, setMap] = useState(null);
