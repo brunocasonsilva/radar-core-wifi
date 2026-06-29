@@ -41,8 +41,6 @@ function App() {
 
     setLoading(true);
     try {
-      console.log('Buscando:', searchInput);
-      
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchInput)}&format=json&limit=1`
       );
@@ -50,8 +48,6 @@ function App() {
 
       if (results.length > 0) {
         const place = results[0];
-        console.log('Lugar encontrado:', place.display_name);
-        
         const lat = parseFloat(place.lat);
         const lon = parseFloat(place.lon);
 
@@ -59,8 +55,7 @@ function App() {
           name: place.display_name.split(',')[0],
           address: place.display_name,
           lat: lat,
-          lon: lon,
-          type: 'restaurant'
+          lon: lon
         });
 
         setMapCenter([lat, lon]);
@@ -69,7 +64,6 @@ function App() {
         alert('Local não encontrado. Tente outro nome ou endereço.');
       }
     } catch (error) {
-      console.error('Erro:', error);
       alert('Erro ao buscar local');
     }
     setLoading(false);
@@ -80,46 +74,47 @@ function App() {
 
     setLoading(true);
     try {
-      console.log('Buscando estabelecimentos próximos...');
-      
-      const south = selectedPlace.lat - (radius / 111);
-      const north = selectedPlace.lat + (radius / 111);
-      const west = selectedPlace.lon - (radius / 111);
-      const east = selectedPlace.lon + (radius / 111);
+      const keywords = ['restaurante', 'café', 'bar', 'padaria', 'lanchonete'];
+      const allResults = [];
 
-      const query = `[bbox:${south},${west},${north},${east}];(node["amenity"~"restaurant|cafe|bar|fast_food|pub"];);out center;`;
+      for (let keyword of keywords) {
+        const query = `${keyword} near ${selectedPlace.name}`;
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=10&viewbox=${selectedPlace.lon - radius/111},${selectedPlace.lat - radius/111},${selectedPlace.lon + radius/111},${selectedPlace.lat + radius/111}&bounded=1`
+        );
+        const results = await response.json();
+        
+        results.forEach(place => {
+          const lat = parseFloat(place.lat);
+          const lon = parseFloat(place.lon);
+          const dist = calculateDistance(selectedPlace.lat, selectedPlace.lon, lat, lon);
+          
+          if (dist > 0.1 && dist <= radius) {
+            allResults.push({
+              id: place.place_id,
+              name: place.display_name.split(',')[0],
+              address: place.display_name,
+              lat: lat,
+              lon: lon,
+              type: keyword,
+              phone: 'N/A',
+              hours: 'N/A',
+              distance: dist
+            });
+          }
+        });
+      }
 
-      const response = await fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST',
-        body: query
-      });
+      // Remove duplicatas
+      const unique = Array.from(
+        new Map(allResults.map(item => [item.id, item])).values()
+      ).sort((a, b) => a.distance - b.distance);
 
-      const data = await response.json();
-      console.log('Encontrados:', data.elements?.length || 0);
-
-      if (data.elements && data.elements.length > 0) {
-        const places = data.elements
-          .filter(el => el.lat && el.lon)
-          .map(el => ({
-            id: el.id,
-            name: el.tags?.name || 'Sem nome',
-            lat: el.lat,
-            lon: el.lon,
-            phone: el.tags?.['contact:phone'] || 'N/A',
-            hours: el.tags?.['opening_hours'] || 'N/A',
-            type: el.tags?.amenity || 'Estabelecimento',
-            distance: calculateDistance(selectedPlace.lat, selectedPlace.lon, el.lat, el.lon)
-          }))
-          .filter(p => p.distance > 0.1) // Remove o próprio lugar
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 50);
-
-        setCompetitors(places);
-      } else {
+      setCompetitors(unique.slice(0, 50));
+      if (unique.length === 0) {
         alert('Nenhum estabelecimento encontrado neste raio');
       }
     } catch (error) {
-      console.error('Erro:', error);
       alert('Erro ao buscar concorrentes. Tente novamente.');
     }
     setLoading(false);
@@ -215,8 +210,7 @@ function App() {
                 <Popup>
                   <strong>{comp.name}</strong><br />
                   {comp.distance.toFixed(2)} km<br />
-                  {comp.type}<br />
-                  {comp.phone}
+                  {comp.type}
                 </Popup>
               </Marker>
             ))}
@@ -239,8 +233,7 @@ function App() {
                     <th>Nome</th>
                     <th>Distância</th>
                     <th>Tipo</th>
-                    <th>Telefone</th>
-                    <th>Horário</th>
+                    <th>Endereço</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -249,8 +242,7 @@ function App() {
                       <td>{comp.name}</td>
                       <td>{comp.distance.toFixed(2)} km</td>
                       <td>{comp.type}</td>
-                      <td>{comp.phone}</td>
-                      <td>{comp.hours}</td>
+                      <td>{comp.address}</td>
                     </tr>
                   ))}
                 </tbody>
