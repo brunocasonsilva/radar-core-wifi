@@ -29,7 +29,8 @@ const redIcon = L.icon({
 });
 
 function App() {
-  const [searchInput, setSearchInput] = useState('');
+  const [searchName, setSearchName] = useState('');
+  const [searchCity, setSearchCity] = useState('São Paulo');
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [radius, setRadius] = useState(5);
   const [competitors, setCompetitors] = useState([]);
@@ -37,17 +38,26 @@ function App() {
   const [mapCenter, setMapCenter] = useState([-23.5505, -46.6333]);
 
   const searchPlace = async () => {
-    if (!searchInput) return;
+    if (!searchName) {
+      alert('Digite um nome ou endereço');
+      return;
+    }
 
     setLoading(true);
     try {
+      const query = searchCity ? `${searchName}, ${searchCity}` : searchName;
+      console.log('Buscando:', query);
+      
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchInput)}&format=json&limit=1`
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`
       );
       const results = await response.json();
 
       if (results.length > 0) {
-        const place = results[0];
+        // Mostra todos os resultados para escolher
+        console.log('Encontrados:', results.length);
+        const place = results[0]; // Pega o primeiro mais relevante
+        
         const lat = parseFloat(place.lat);
         const lon = parseFloat(place.lon);
 
@@ -60,8 +70,9 @@ function App() {
 
         setMapCenter([lat, lon]);
         setCompetitors([]);
+        console.log('Lugar selecionado:', place.display_name);
       } else {
-        alert('Local não encontrado. Tente outro nome ou endereço.');
+        alert('Local não encontrado. Tente:\n- Um nome mais genérico\n- Adicione a cidade\n- Use um endereço (Rua, Avenida)');
       }
     } catch (error) {
       alert('Erro ao buscar local');
@@ -74,13 +85,13 @@ function App() {
 
     setLoading(true);
     try {
-      const keywords = ['restaurante', 'café', 'bar', 'padaria', 'lanchonete'];
+      const keywords = ['restaurante', 'café', 'bar', 'padaria', 'pizzaria', 'lanchonete', 'hamburgueria'];
       const allResults = [];
 
       for (let keyword of keywords) {
-        const query = `${keyword} near ${selectedPlace.name}`;
+        const query = `${keyword} ${selectedPlace.address.split(',').slice(0, 2).join(',')}`;
         const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=10&viewbox=${selectedPlace.lon - radius/111},${selectedPlace.lat - radius/111},${selectedPlace.lon + radius/111},${selectedPlace.lat + radius/111}&bounded=1`
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=15&viewbox=${selectedPlace.lon - radius/111},${selectedPlace.lat - radius/111},${selectedPlace.lon + radius/111},${selectedPlace.lat + radius/111}&bounded=1`
         );
         const results = await response.json();
         
@@ -89,7 +100,7 @@ function App() {
           const lon = parseFloat(place.lon);
           const dist = calculateDistance(selectedPlace.lat, selectedPlace.lon, lat, lon);
           
-          if (dist > 0.1 && dist <= radius) {
+          if (dist > 0.05 && dist <= radius) {
             allResults.push({
               id: place.place_id,
               name: place.display_name.split(',')[0],
@@ -105,16 +116,18 @@ function App() {
         });
       }
 
-      // Remove duplicatas
       const unique = Array.from(
         new Map(allResults.map(item => [item.id, item])).values()
       ).sort((a, b) => a.distance - b.distance);
 
       setCompetitors(unique.slice(0, 50));
+      console.log('Concorrentes encontrados:', unique.length);
+      
       if (unique.length === 0) {
-        alert('Nenhum estabelecimento encontrado neste raio');
+        alert('Nenhum estabelecimento encontrado neste raio. Tente aumentar o raio ou o nome da busca.');
       }
     } catch (error) {
+      console.error('Erro:', error);
       alert('Erro ao buscar concorrentes. Tente novamente.');
     }
     setLoading(false);
@@ -156,10 +169,18 @@ function App() {
           <div className="search-container">
             <input
               type="text"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Digite o nome do estabelecimento ou endereço"
+              value={searchName}
+              onChange={(e) => setSearchName(e.target.value)}
+              placeholder="Nome do estabelecimento (ex: Starbucks, Restaurante, Bar)"
               className="search-input"
+            />
+            <input
+              type="text"
+              value={searchCity}
+              onChange={(e) => setSearchCity(e.target.value)}
+              placeholder="Cidade (ex: São Paulo)"
+              className="search-input"
+              style={{ maxWidth: '250px' }}
             />
             <button onClick={searchPlace} disabled={loading} className="btn btn-primary">
               {loading ? 'Buscando...' : 'Buscar'}
