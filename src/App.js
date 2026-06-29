@@ -1,131 +1,135 @@
-import React, { useRef, useState } from 'react';
-import { GoogleMap, LoadScript, Marker, Circle } from '@react-google-maps/api';
+import React, { useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
+import L from 'leaflet';
 import './App.css';
 
-const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+// Fix para ícones do Leaflet
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
-const mapContainerStyle = {
-  width: '100%',
-  height: '500px',
-  borderRadius: '8px'
-};
+const blueIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-blue.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
 
-const defaultCenter = {
-  lat: -23.5505,
-  lng: -46.6333
-};
+const redIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-red.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
 
 function App() {
-  const [map, setMap] = useState(null);
   const [searchInput, setSearchInput] = useState('');
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [radius, setRadius] = useState(5);
   const [competitors, setCompetitors] = useState([]);
   const [loading, setLoading] = useState(false);
-  const serviceRef = useRef(null);
+  const [mapCenter, setMapCenter] = useState([-23.5505, -46.6333]);
 
-  const onMapLoad = (mapInstance) => {
-    setMap(mapInstance);
-    serviceRef.current = new window.google.maps.places.PlacesService(mapInstance);
-  };
-
-  const handleSearchInputChange = (e) => {
-    setSearchInput(e.target.value);
-  };
-
-  const handleSearchPlace = async () => {
-    if (!serviceRef.current || !searchInput) return;
+  const searchPlace = async () => {
+    if (!searchInput) return;
 
     setLoading(true);
     try {
-      const request = {
-        query: searchInput,
-        fields: ['place_id', 'geometry', 'name', 'types', 'formatted_address', 'website', 'formatted_phone_number', 'opening_hours', 'rating', 'reviews']
-      };
+      console.log('Buscando:', searchInput);
+      
+      // Usar Nominatim (OpenStreetMap) para buscar lugar
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchInput)}&format=json&limit=1`
+      );
+      const results = await response.json();
 
-      serviceRef.current.findPlaceFromQuery(request, (results, status) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-          const place = results[0];
-          setSelectedPlace({
-            id: place.place_id,
-            name: place.name,
-            location: place.geometry.location,
-            address: place.formatted_address,
-            phone: place.formatted_phone_number || 'N/A',
-            website: place.website || 'N/A',
-            types: place.types || [],
-            hours: place.opening_hours?.weekday_text || [],
-            rating: place.rating || 'N/A',
-            reviews: place.reviews || []
-          });
+      if (results.length > 0) {
+        const place = results[0];
+        console.log('Lugar encontrado:', place.display_name);
+        
+        const lat = parseFloat(place.lat);
+        const lon = parseFloat(place.lon);
 
-          if (map) {
-            map.panTo(place.geometry.location);
-            map.setZoom(15);
-          }
+        setSelectedPlace({
+          name: place.display_name.split(',')[0],
+          address: place.display_name,
+          lat: lat,
+          lon: lon,
+          type: 'restaurant' // padrão
+        });
 
-          setCompetitors([]);
-        } else {
-          alert('Estabelecimento não encontrado');
-        }
-        setLoading(false);
-      });
+        setMapCenter([lat, lon]);
+        setCompetitors([]);
+      } else {
+        alert('Local não encontrado. Tente outro nome ou endereço.');
+      }
     } catch (error) {
-      console.error('Erro na busca:', error);
-      setLoading(false);
+      console.error('Erro:', error);
+      alert('Erro ao buscar local');
     }
+    setLoading(false);
   };
 
-  const handleSearchCompetitors = async () => {
-    if (!selectedPlace || !serviceRef.current || !map) return;
+  const searchCompetitors = async () => {
+    if (!selectedPlace) return;
 
     setLoading(true);
     try {
-      const radiusInMeters = radius * 1000;
-      const placeType = selectedPlace.types[0] || 'establishment';
+      console.log('Buscando estabelecimentos próximos...');
+      
+      // Usar Overpass API para buscar estabelecimentos próximos
+      const query = `
+        [bbox:${selectedPlace.lat - radius/111},${selectedPlace.lon - radius/111},${selectedPlace.lat + radius/111},${selectedPlace.lon + radius/111}];
+        (node["amenity"="restaurant"];node["amenity"="cafe"];node["amenity"="bar"];node["amenity"="fast_food"];);
+        out center;
+      `;
 
-      const request = {
-        location: selectedPlace.location,
-        radius: radiusInMeters,
-        type: placeType,
-        fields: ['place_id', 'name', 'geometry', 'formatted_address', 'formatted_phone_number', 'website', 'opening_hours', 'rating', 'reviews']
-      };
-
-      serviceRef.current.nearbySearch(request, (results, status) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-          const filtered = results.filter(r => r.place_id !== selectedPlace.id);
-
-          const competitorsList = filtered.map(place => ({
-            id: place.place_id,
-            name: place.name,
-            location: place.geometry.location,
-            address: place.formatted_address || 'N/A',
-            phone: place.formatted_phone_number || 'N/A',
-            website: place.website || 'N/A',
-            hours: place.opening_hours?.weekday_text || [],
-            rating: place.rating || 'N/A',
-            reviews: place.reviews || [],
-            distance: calculateDistance(selectedPlace.location, place.geometry.location)
-          }));
-
-          setCompetitors(competitorsList.sort((a, b) => a.distance - b.distance));
-        }
-        setLoading(false);
+      const response = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        body: query
       });
+
+      const data = await response.json();
+      console.log('Encontrados:', data.elements?.length || 0);
+
+      if (data.elements) {
+        const places = data.elements
+          .filter(el => el.lat && el.lon && !(el.id === selectedPlace.id))
+          .map(el => ({
+            id: el.id,
+            name: el.tags?.name || 'Sem nome',
+            lat: el.lat,
+            lon: el.lon,
+            phone: el.tags?.['contact:phone'] || 'N/A',
+            hours: el.tags?.['opening_hours'] || 'N/A',
+            type: el.tags?.amenity || 'N/A',
+            distance: calculateDistance(selectedPlace.lat, selectedPlace.lon, el.lat, el.lon)
+          }))
+          .sort((a, b) => a.distance - b.distance);
+
+        setCompetitors(places);
+      }
     } catch (error) {
-      console.error('Erro ao buscar concorrentes:', error);
-      setLoading(false);
+      console.error('Erro:', error);
+      alert('Erro ao buscar concorrentes');
     }
+    setLoading(false);
   };
 
-  const calculateDistance = (loc1, loc2) => {
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
-    const dLat = (loc2.lat() - loc1.lat()) * Math.PI / 180;
-    const dLng = (loc2.lng() - loc1.lng()) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(loc1.lat() * Math.PI / 180) * Math.cos(loc2.lat() * Math.PI / 180) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
@@ -144,128 +148,115 @@ function App() {
   };
 
   return (
-    <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={['places']}>
-      <div className="App">
-        <header className="app-header">
-          <h1>🎯 Radar Core Wi-Fi</h1>
-          <p>Análise de Concorrentes por Raio de Cobertura</p>
-        </header>
+    <div className="App">
+      <header className="app-header">
+        <h1>🎯 Radar Core Wi-Fi</h1>
+        <p>Análise de Concorrentes por Raio de Cobertura</p>
+      </header>
 
-        <main className="app-main">
-          <section className="search-section">
-            <div className="search-container">
-              <input
-                type="text"
-                value={searchInput}
-                onChange={handleSearchInputChange}
-                placeholder="Digite o nome do estabelecimento ou endereço"
-                className="search-input"
-              />
-              <button onClick={handleSearchPlace} disabled={loading} className="btn btn-primary">
-                {loading ? 'Buscando...' : 'Buscar'}
+      <main className="app-main">
+        <section className="search-section">
+          <div className="search-container">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Digite o nome do estabelecimento ou endereço"
+              className="search-input"
+            />
+            <button onClick={searchPlace} disabled={loading} className="btn btn-primary">
+              {loading ? 'Buscando...' : 'Buscar'}
+            </button>
+          </div>
+
+          {selectedPlace && (
+            <div className="selected-place-info">
+              <h3>{selectedPlace.name}</h3>
+              <p>{selectedPlace.address}</p>
+              <div className="radius-selector">
+                <label>Raio de Busca:</label>
+                <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
+                  <option value={1}>1 km</option>
+                  <option value={5}>5 km</option>
+                  <option value={10}>10 km</option>
+                </select>
+                <button onClick={searchCompetitors} disabled={loading} className="btn btn-secondary">
+                  {loading ? 'Buscando...' : 'Buscar Concorrentes'}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="map-section">
+          <MapContainer center={mapCenter} zoom={13} style={{ height: '500px', width: '100%' }}>
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; OpenStreetMap contributors'
+            />
+            
+            {selectedPlace && (
+              <>
+                <Marker position={[selectedPlace.lat, selectedPlace.lon]} icon={blueIcon}>
+                  <Popup>{selectedPlace.name}</Popup>
+                </Marker>
+                <Circle
+                  center={[selectedPlace.lat, selectedPlace.lon]}
+                  radius={radius * 1000}
+                  pathOptions={{ color: '#4285F4', fillOpacity: 0.1 }}
+                />
+              </>
+            )}
+
+            {competitors.map((comp) => (
+              <Marker key={comp.id} position={[comp.lat, comp.lon]} icon={redIcon}>
+                <Popup>
+                  <strong>{comp.name}</strong><br />
+                  {comp.distance.toFixed(2)} km<br />
+                  {comp.phone}
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+        </section>
+
+        {competitors.length > 0 && (
+          <section className="results-section">
+            <div className="results-header">
+              <h2>Concorrentes Encontrados ({competitors.length})</h2>
+              <button onClick={generatePDF} className="btn btn-export">
+                📄 Exportar PDF
               </button>
             </div>
 
-            {selectedPlace && (
-              <div className="selected-place-info">
-                <h3>{selectedPlace.name}</h3>
-                <p>{selectedPlace.address}</p>
-                <div className="radius-selector">
-                  <label>Raio de Busca:</label>
-                  <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
-                    <option value={1}>1 km</option>
-                    <option value={5}>5 km</option>
-                    <option value={10}>10 km</option>
-                  </select>
-                  <button onClick={handleSearchCompetitors} disabled={loading} className="btn btn-secondary">
-                    {loading ? 'Buscando...' : 'Buscar Concorrentes'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {map && (
-            <section className="map-section">
-              <GoogleMap
-                mapContainerStyle={mapContainerStyle}
-                center={selectedPlace?.location || defaultCenter}
-                zoom={selectedPlace ? 15 : 12}
-                onLoad={onMapLoad}
-              >
-                {selectedPlace && (
-                  <>
-                    <Marker
-                      position={selectedPlace.location}
-                      title={selectedPlace.name}
-                      icon="http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-                    />
-                    <Circle
-                      center={selectedPlace.location}
-                      radius={radius * 1000}
-                      options={{
-                        fillColor: '#4285F4',
-                        fillOpacity: 0.1,
-                        strokeColor: '#4285F4',
-                        strokeOpacity: 0.8,
-                        strokeWeight: 2
-                      }}
-                    />
-                  </>
-                )}
-
-                {competitors.map((competitor, index) => (
-                  <Marker
-                    key={index}
-                    position={competitor.location}
-                    title={competitor.name}
-                    icon="http://maps.google.com/mapfiles/ms/icons/red-dot.png"
-                  />
-                ))}
-              </GoogleMap>
-            </section>
-          )}
-
-          {competitors.length > 0 && (
-            <section className="results-section">
-              <div className="results-header">
-                <h2>Concorrentes Encontrados ({competitors.length})</h2>
-                <button onClick={generatePDF} className="btn btn-export">
-                  📄 Exportar PDF
-                </button>
-              </div>
-
-              <div id="report-content" className="results-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Nome</th>
-                      <th>Distância</th>
-                      <th>Telefone</th>
-                      <th>Site</th>
-                      <th>Avaliação</th>
-                      <th>Horário</th>
+            <div id="report-content" className="results-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Distância</th>
+                    <th>Telefone</th>
+                    <th>Tipo</th>
+                    <th>Horário</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {competitors.map((comp) => (
+                    <tr key={comp.id}>
+                      <td>{comp.name}</td>
+                      <td>{comp.distance.toFixed(2)} km</td>
+                      <td>{comp.phone}</td>
+                      <td>{comp.type}</td>
+                      <td>{comp.hours}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {competitors.map((competitor, index) => (
-                      <tr key={index}>
-                        <td>{competitor.name}</td>
-                        <td>{competitor.distance.toFixed(2)} km</td>
-                        <td>{competitor.phone}</td>
-                        <td>{competitor.website !== 'N/A' ? <a href={competitor.website} target="_blank" rel="noopener noreferrer">Visitar</a> : 'N/A'}</td>
-                        <td>⭐ {competitor.rating !== 'N/A' ? competitor.rating : 'N/A'}</td>
-                        <td>{competitor.hours.length > 0 ? competitor.hours[0] : 'N/A'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-        </main>
-      </div>
-    </LoadScript>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+      </main>
+    </div>
   );
 }
 
