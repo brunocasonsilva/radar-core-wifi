@@ -28,9 +28,11 @@ const redIcon = L.icon({
   shadowSize: [41, 41]
 });
 
+const CLIENT_ID = process.env.REACT_APP_FOURSQUARE_CLIENT_ID;
+const CLIENT_SECRET = process.env.REACT_APP_FOURSQUARE_CLIENT_SECRET;
+
 function App() {
-  const [searchName, setSearchName] = useState('');
-  const [searchCity, setSearchCity] = useState('São Paulo');
+  const [searchInput, setSearchInput] = useState('');
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [radius, setRadius] = useState(5);
   const [competitors, setCompetitors] = useState([]);
@@ -38,44 +40,46 @@ function App() {
   const [mapCenter, setMapCenter] = useState([-23.5505, -46.6333]);
 
   const searchPlace = async () => {
-    if (!searchName) {
+    if (!searchInput) {
       alert('Digite um nome ou endereço');
       return;
     }
 
     setLoading(true);
     try {
-      const query = searchCity ? `${searchName}, ${searchCity}` : searchName;
-      console.log('Buscando:', query);
+      console.log('Buscando com Foursquare:', searchInput);
       
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`
+        `https://api.foursquare.com/v2/venues/search?client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}&query=${encodeURIComponent(searchInput)}&limit=1&v=20230101`
       );
-      const results = await response.json();
+      const data = await response.json();
 
-      if (results.length > 0) {
-        // Mostra todos os resultados para escolher
-        console.log('Encontrados:', results.length);
-        const place = results[0]; // Pega o primeiro mais relevante
-        
-        const lat = parseFloat(place.lat);
-        const lon = parseFloat(place.lon);
+      if (data.response.venues && data.response.venues.length > 0) {
+        const venue = data.response.venues[0];
+        const lat = venue.location.lat;
+        const lon = venue.location.lng;
 
         setSelectedPlace({
-          name: place.display_name.split(',')[0],
-          address: place.display_name,
+          id: venue.id,
+          name: venue.name,
+          address: venue.location.address || 'Sem endereço',
+          city: venue.location.city || '',
           lat: lat,
-          lon: lon
+          lon: lon,
+          category: venue.categories[0]?.name || 'Estabelecimento',
+          phone: venue.contact?.phone || 'N/A',
+          hours: venue.hours?.status || 'N/A'
         });
 
         setMapCenter([lat, lon]);
         setCompetitors([]);
-        console.log('Lugar selecionado:', place.display_name);
+        console.log('Lugar encontrado:', venue.name);
       } else {
-        alert('Local não encontrado. Tente:\n- Um nome mais genérico\n- Adicione a cidade\n- Use um endereço (Rua, Avenida)');
+        alert('Local não encontrado no Foursquare. Tente outro nome.');
       }
     } catch (error) {
-      alert('Erro ao buscar local');
+      console.error('Erro:', error);
+      alert('Erro ao buscar local: ' + error.message);
     }
     setLoading(false);
   };
@@ -85,50 +89,45 @@ function App() {
 
     setLoading(true);
     try {
-      const keywords = ['restaurante', 'café', 'bar', 'padaria', 'pizzaria', 'lanchonete', 'hamburgueria'];
-      const allResults = [];
-
-      for (let keyword of keywords) {
-        const query = `${keyword} ${selectedPlace.address.split(',').slice(0, 2).join(',')}`;
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=15&viewbox=${selectedPlace.lon - radius/111},${selectedPlace.lat - radius/111},${selectedPlace.lon + radius/111},${selectedPlace.lat + radius/111}&bounded=1`
-        );
-        const results = await response.json();
-        
-        results.forEach(place => {
-          const lat = parseFloat(place.lat);
-          const lon = parseFloat(place.lon);
-          const dist = calculateDistance(selectedPlace.lat, selectedPlace.lon, lat, lon);
-          
-          if (dist > 0.05 && dist <= radius) {
-            allResults.push({
-              id: place.place_id,
-              name: place.display_name.split(',')[0],
-              address: place.display_name,
-              lat: lat,
-              lon: lon,
-              type: keyword,
-              phone: 'N/A',
-              hours: 'N/A',
-              distance: dist
-            });
-          }
-        });
-      }
-
-      const unique = Array.from(
-        new Map(allResults.map(item => [item.id, item])).values()
-      ).sort((a, b) => a.distance - b.distance);
-
-      setCompetitors(unique.slice(0, 50));
-      console.log('Concorrentes encontrados:', unique.length);
+      console.log('Buscando concorrentes perto de:', selectedPlace.name);
       
-      if (unique.length === 0) {
-        alert('Nenhum estabelecimento encontrado neste raio. Tente aumentar o raio ou o nome da busca.');
+      // Usa a categoria do lugar encontrado para buscar similares
+      const query = selectedPlace.category;
+      const radiusMeters = radius * 1000;
+
+      const response = await fetch(
+        `https://api.foursquare.com/v2/venues/search?client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}&ll=${selectedPlace.lat},${selectedPlace.lon}&query=${encodeURIComponent(query)}&radius=${radiusMeters}&limit=50&v=20230101`
+      );
+      const data = await response.json();
+
+      if (data.response.venues) {
+        const venues = data.response.venues
+          .filter(v => v.id !== selectedPlace.id)
+          .map(v => ({
+            id: v.id,
+            name: v.name,
+            address: v.location.address || 'Sem endereço',
+            city: v.location.city || '',
+            lat: v.location.lat,
+            lon: v.location.lng,
+            category: v.categories[0]?.name || 'Estabelecimento',
+            phone: v.contact?.phone || 'N/A',
+            hours: v.hours?.status || 'N/A',
+            rating: v.rating || 'N/A',
+            distance: calculateDistance(selectedPlace.lat, selectedPlace.lon, v.location.lat, v.location.lng)
+          }))
+          .sort((a, b) => a.distance - b.distance);
+
+        setCompetitors(venues);
+        console.log('Concorrentes encontrados:', venues.length);
+        
+        if (venues.length === 0) {
+          alert('Nenhum estabelecimento similar encontrado neste raio.');
+        }
       }
     } catch (error) {
       console.error('Erro:', error);
-      alert('Erro ao buscar concorrentes. Tente novamente.');
+      alert('Erro ao buscar concorrentes: ' + error.message);
     }
     setLoading(false);
   };
@@ -169,18 +168,10 @@ function App() {
           <div className="search-container">
             <input
               type="text"
-              value={searchName}
-              onChange={(e) => setSearchName(e.target.value)}
-              placeholder="Nome do estabelecimento (ex: Starbucks, Restaurante, Bar)"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Ex: Starbucks Av Paulista, McDonald's São Paulo, Bar Vila Madalena"
               className="search-input"
-            />
-            <input
-              type="text"
-              value={searchCity}
-              onChange={(e) => setSearchCity(e.target.value)}
-              placeholder="Cidade (ex: São Paulo)"
-              className="search-input"
-              style={{ maxWidth: '250px' }}
             />
             <button onClick={searchPlace} disabled={loading} className="btn btn-primary">
               {loading ? 'Buscando...' : 'Buscar'}
@@ -190,7 +181,12 @@ function App() {
           {selectedPlace && (
             <div className="selected-place-info">
               <h3>{selectedPlace.name}</h3>
-              <p>{selectedPlace.address}</p>
+              <p>
+                {selectedPlace.address} {selectedPlace.city && `- ${selectedPlace.city}`}
+              </p>
+              <p style={{ fontSize: '0.9rem', color: '#666' }}>
+                📂 {selectedPlace.category} | 📞 {selectedPlace.phone}
+              </p>
               <div className="radius-selector">
                 <label>Raio de Busca:</label>
                 <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
@@ -216,7 +212,11 @@ function App() {
             {selectedPlace && (
               <>
                 <Marker position={[selectedPlace.lat, selectedPlace.lon]} icon={blueIcon}>
-                  <Popup>{selectedPlace.name}</Popup>
+                  <Popup>
+                    <strong>{selectedPlace.name}</strong><br />
+                    {selectedPlace.category}<br />
+                    {selectedPlace.phone}
+                  </Popup>
                 </Marker>
                 <Circle
                   center={[selectedPlace.lat, selectedPlace.lon]}
@@ -231,7 +231,8 @@ function App() {
                 <Popup>
                   <strong>{comp.name}</strong><br />
                   {comp.distance.toFixed(2)} km<br />
-                  {comp.type}
+                  ⭐ {comp.rating}<br />
+                  {comp.phone}
                 </Popup>
               </Marker>
             ))}
@@ -253,7 +254,9 @@ function App() {
                   <tr>
                     <th>Nome</th>
                     <th>Distância</th>
-                    <th>Tipo</th>
+                    <th>Categoria</th>
+                    <th>Avaliação</th>
+                    <th>Telefone</th>
                     <th>Endereço</th>
                   </tr>
                 </thead>
@@ -262,7 +265,9 @@ function App() {
                     <tr key={comp.id}>
                       <td>{comp.name}</td>
                       <td>{comp.distance.toFixed(2)} km</td>
-                      <td>{comp.type}</td>
+                      <td>{comp.category}</td>
+                      <td>⭐ {comp.rating}</td>
+                      <td>{comp.phone}</td>
                       <td>{comp.address}</td>
                     </tr>
                   ))}
