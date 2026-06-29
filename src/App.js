@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import './App.css';
@@ -28,8 +28,7 @@ const redIcon = L.icon({
   shadowSize: [41, 41]
 });
 
-const CLIENT_ID = process.env.REACT_APP_FOURSQUARE_CLIENT_ID;
-const CLIENT_SECRET = process.env.REACT_APP_FOURSQUARE_CLIENT_SECRET;
+const GOOGLE_MAPS_API_KEY = 'AIzaSyCsXzMSKKBHMqTuy4dRW7sOL0d3NgAk4JI';
 
 function App() {
   const [searchInput, setSearchInput] = useState('');
@@ -38,98 +37,127 @@ function App() {
   const [competitors, setCompetitors] = useState([]);
   const [loading, setLoading] = useState(false);
   const [mapCenter, setMapCenter] = useState([-23.5505, -46.6333]);
+  const serviceRef = useRef(null);
+  const [mapsLoaded, setMapsLoaded] = useState(false);
+
+  // Carrega Google Maps
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      serviceRef.current = new window.google.maps.places.PlacesService(
+        document.createElement('div')
+      );
+      setMapsLoaded(true);
+      console.log('Google Maps carregado!');
+    };
+    document.head.appendChild(script);
+  }, []);
 
   const searchPlace = async () => {
-    if (!searchInput) {
-      alert('Digite um nome ou endereço');
+    if (!searchInput || !mapsLoaded) {
+      alert('Digite um local e aguarde o Google Maps carregar');
       return;
     }
 
     setLoading(true);
     try {
-      console.log('Buscando com Foursquare:', searchInput);
+      console.log('Buscando:', searchInput);
       
-      const response = await fetch(
-        `https://api.foursquare.com/v2/venues/search?client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}&query=${encodeURIComponent(searchInput)}&limit=1&v=20230101`
-      );
-      const data = await response.json();
+      const request = {
+        query: searchInput,
+        fields: ['place_id', 'geometry', 'name', 'formatted_address', 'types']
+      };
 
-      if (data.response.venues && data.response.venues.length > 0) {
-        const venue = data.response.venues[0];
-        const lat = venue.location.lat;
-        const lon = venue.location.lng;
+      serviceRef.current.findPlaceFromQuery(request, (results, status) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && results?.[0]) {
+          const place = results[0];
+          const lat = place.geometry.location.lat();
+          const lon = place.geometry.location.lng();
 
-        setSelectedPlace({
-          id: venue.id,
-          name: venue.name,
-          address: venue.location.address || 'Sem endereço',
-          city: venue.location.city || '',
-          lat: lat,
-          lon: lon,
-          category: venue.categories[0]?.name || 'Estabelecimento',
-          phone: venue.contact?.phone || 'N/A',
-          hours: venue.hours?.status || 'N/A'
-        });
+          setSelectedPlace({
+            id: place.place_id,
+            name: place.name,
+            address: place.formatted_address,
+            lat: lat,
+            lon: lon,
+            location: place.geometry.location,
+            types: place.types || []
+          });
 
-        setMapCenter([lat, lon]);
-        setCompetitors([]);
-        console.log('Lugar encontrado:', venue.name);
-      } else {
-        alert('Local não encontrado no Foursquare. Tente outro nome.');
-      }
+          setMapCenter([lat, lon]);
+          setCompetitors([]);
+          console.log('Local encontrado:', place.name);
+        } else {
+          alert('Local não encontrado. Tente outro nome ou endereço.');
+        }
+        setLoading(false);
+      });
     } catch (error) {
       console.error('Erro:', error);
-      alert('Erro ao buscar local: ' + error.message);
+      alert('Erro ao buscar local');
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const searchCompetitors = async () => {
-    if (!selectedPlace) return;
+    if (!selectedPlace || !mapsLoaded) return;
 
     setLoading(true);
     try {
-      console.log('Buscando concorrentes perto de:', selectedPlace.name);
+      console.log('Buscando concorrentes...');
       
-      // Usa a categoria do lugar encontrado para buscar similares
-      const query = selectedPlace.category;
       const radiusMeters = radius * 1000;
+      const types = selectedPlace.types.filter(t => t !== 'point_of_interest' && t !== 'establishment');
+      const searchType = types[0] || 'restaurant';
 
-      const response = await fetch(
-        `https://api.foursquare.com/v2/venues/search?client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}&ll=${selectedPlace.lat},${selectedPlace.lon}&query=${encodeURIComponent(query)}&radius=${radiusMeters}&limit=50&v=20230101`
-      );
-      const data = await response.json();
+      const request = {
+        location: selectedPlace.location,
+        radius: radiusMeters,
+        type: searchType,
+        fields: ['place_id', 'name', 'geometry', 'formatted_address', 'photos', 'rating', 'opening_hours', 'formatted_phone_number']
+      };
 
-      if (data.response.venues) {
-        const venues = data.response.venues
-          .filter(v => v.id !== selectedPlace.id)
-          .map(v => ({
-            id: v.id,
-            name: v.name,
-            address: v.location.address || 'Sem endereço',
-            city: v.location.city || '',
-            lat: v.location.lat,
-            lon: v.location.lng,
-            category: v.categories[0]?.name || 'Estabelecimento',
-            phone: v.contact?.phone || 'N/A',
-            hours: v.hours?.status || 'N/A',
-            rating: v.rating || 'N/A',
-            distance: calculateDistance(selectedPlace.lat, selectedPlace.lon, v.location.lat, v.location.lng)
-          }))
-          .sort((a, b) => a.distance - b.distance);
+      console.log('Request:', request);
 
-        setCompetitors(venues);
-        console.log('Concorrentes encontrados:', venues.length);
-        
-        if (venues.length === 0) {
-          alert('Nenhum estabelecimento similar encontrado neste raio.');
+      serviceRef.current.nearbySearch(request, (results, status) => {
+        console.log('Status:', status);
+        console.log('Resultados:', results?.length || 0);
+
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+          const places = results
+            .filter(p => p.place_id !== selectedPlace.id)
+            .map(p => ({
+              id: p.place_id,
+              name: p.name,
+              address: p.formatted_address || 'N/A',
+              lat: p.geometry.location.lat(),
+              lon: p.geometry.location.lng(),
+              phone: p.formatted_phone_number || 'N/A',
+              rating: p.rating || 'N/A',
+              hours: p.opening_hours?.weekday_text?.[0] || 'N/A',
+              distance: calculateDistance(selectedPlace.lat, selectedPlace.lon, p.geometry.location.lat(), p.geometry.location.lng())
+            }))
+            .sort((a, b) => a.distance - b.distance);
+
+          setCompetitors(places);
+          console.log('Concorrentes encontrados:', places.length);
+
+          if (places.length === 0) {
+            alert('Nenhum estabelecimento similar encontrado neste raio.');
+          }
+        } else {
+          alert('Erro ao buscar concorrentes: ' + status);
         }
-      }
+        setLoading(false);
+      });
     } catch (error) {
       console.error('Erro:', error);
-      alert('Erro ao buscar concorrentes: ' + error.message);
+      alert('Erro ao buscar concorrentes');
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -170,23 +198,19 @@ function App() {
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Ex: Starbucks Av Paulista, McDonald's São Paulo, Bar Vila Madalena"
+              onKeyPress={(e) => e.key === 'Enter' && searchPlace()}
+              placeholder="Ex: Starbucks São Paulo, McDonald's Av Paulista"
               className="search-input"
             />
-            <button onClick={searchPlace} disabled={loading} className="btn btn-primary">
-              {loading ? 'Buscando...' : 'Buscar'}
+            <button onClick={searchPlace} disabled={loading || !mapsLoaded} className="btn btn-primary">
+              {!mapsLoaded ? 'Carregando...' : loading ? 'Buscando...' : 'Buscar'}
             </button>
           </div>
 
           {selectedPlace && (
             <div className="selected-place-info">
               <h3>{selectedPlace.name}</h3>
-              <p>
-                {selectedPlace.address} {selectedPlace.city && `- ${selectedPlace.city}`}
-              </p>
-              <p style={{ fontSize: '0.9rem', color: '#666' }}>
-                📂 {selectedPlace.category} | 📞 {selectedPlace.phone}
-              </p>
+              <p>{selectedPlace.address}</p>
               <div className="radius-selector">
                 <label>Raio de Busca:</label>
                 <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>
@@ -212,11 +236,7 @@ function App() {
             {selectedPlace && (
               <>
                 <Marker position={[selectedPlace.lat, selectedPlace.lon]} icon={blueIcon}>
-                  <Popup>
-                    <strong>{selectedPlace.name}</strong><br />
-                    {selectedPlace.category}<br />
-                    {selectedPlace.phone}
-                  </Popup>
+                  <Popup>{selectedPlace.name}</Popup>
                 </Marker>
                 <Circle
                   center={[selectedPlace.lat, selectedPlace.lon]}
@@ -254,9 +274,9 @@ function App() {
                   <tr>
                     <th>Nome</th>
                     <th>Distância</th>
-                    <th>Categoria</th>
                     <th>Avaliação</th>
                     <th>Telefone</th>
+                    <th>Horário</th>
                     <th>Endereço</th>
                   </tr>
                 </thead>
@@ -265,9 +285,9 @@ function App() {
                     <tr key={comp.id}>
                       <td>{comp.name}</td>
                       <td>{comp.distance.toFixed(2)} km</td>
-                      <td>{comp.category}</td>
                       <td>⭐ {comp.rating}</td>
                       <td>{comp.phone}</td>
+                      <td>{comp.hours}</td>
                       <td>{comp.address}</td>
                     </tr>
                   ))}
